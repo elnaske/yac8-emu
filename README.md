@@ -7,7 +7,7 @@ A CHIP-8 emulator/interpreter written in Rust + SDL2.
 | ------- | ------ |
 | Display | In progress |
 | Input |  |
-| System Specs | |
+| System Specs | In progress |
 | Timers | |
 | Interpreter | |
 | OpCodes | 0/32 |

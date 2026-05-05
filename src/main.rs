@@ -7,6 +7,8 @@ use sdl2::pixels::Color;
 pub mod display;
 use display::{C8Display, SCREEN_HEIGHT, SCREEN_WIDTH, ScreenBuffer};
 
+pub mod system;
+
 fn main() {
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
