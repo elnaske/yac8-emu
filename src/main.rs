@@ -7,6 +7,7 @@ use sdl2::pixels::Color;
 pub mod display;
 use display::{C8Display, SCREEN_HEIGHT, SCREEN_WIDTH, ScreenBuffer};
 
+pub mod instructions;
 pub mod system;
 
 fn main() {
