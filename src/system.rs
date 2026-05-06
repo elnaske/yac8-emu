@@ -1,24 +1,15 @@
-use std::ops::{Deref, DerefMut};
-
+use sdl2::Sdl;
 use sdl2::pixels::Color;
 use sdl2::video::Window;
+use sdl2::event::Event;
+use sdl2::keyboard::Keycode;
+
+use std::default::Default;
+use std::path::PathBuf;
 
 use crate::display::C8Display;
 use crate::instructions::Instruction;
-
-struct ProgramCounter(usize);
-impl Deref for ProgramCounter {
-    type Target = usize;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-impl DerefMut for ProgramCounter {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
+use crate::input::get_input;
 
 const FONT_DATA: [u8; 80] = [
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
@@ -39,15 +30,33 @@ const FONT_DATA: [u8; 80] = [
     0xF0, 0x80, 0xF0, 0x80, 0x80, // F
 ];
 
+pub struct C8Config {
+   pub pixel_size: u32,
+   pub on_color: Color,
+   pub off_color: Color,
+   pub debug: bool,
+}
+impl Default for C8Config {
+    fn default() -> Self {
+        C8Config::new(10, Color::WHITE, Color::BLACK, false)
+    }
+}
+impl C8Config {
+    pub fn new(pixel_size: u32, on_color: Color, off_color: Color, debug: bool) -> Self {
+        C8Config { pixel_size, on_color, off_color, debug }
+    }
+}
+
 pub struct Chip8 {
     memory: [u8; 4096],
     display: C8Display,
     var_regs: [u8; 16],
     stack: Vec<u16>,
-    pc: ProgramCounter,
+    pc: u16,
     idx_reg: u16,
-    delay_timer: u8, // TODO: type
-    sound_timer: u8, // TODO: type
+    delay_timer: u8,
+    sound_timer: u8,
+    keypad: [bool; 16],
 }
 impl Chip8 {
     pub fn new(
@@ -57,53 +66,83 @@ impl Chip8 {
         debug: bool,
     ) -> Result<Self, String> {
         let display = C8Display::new(window, on_color, off_color, debug)?;
-        Ok(Chip8 {
-            memory: Chip8::setup_memory(),
+
+        let mut state = Chip8 {
+            memory: [0; 4096],
             display,
             var_regs: [0; 16],
             stack: Vec::new(),
-            pc: ProgramCounter(0),
-            idx_reg: 0x200,
+            pc: 0x200,
+            idx_reg: 0,
             delay_timer: 0,
             sound_timer: 0,
-        })
+            keypad: [false; 16],
+        };
+
+        state.memory[0x50..=0x09F].copy_from_slice(&FONT_DATA);
+
+        // TODO: load rom
+
+        Ok(state)
     }
 
-    fn setup_memory() -> [u8; 4096] {
-        let mut memory = [0; 4096];
-
-        memory[0x50..=0x09F].copy_from_slice(&FONT_DATA);
-
-        memory
+    pub fn from_config(window: Window, cfg: C8Config) -> Result<Self, String> {
+        Chip8::new(window, cfg.on_color, cfg.off_color, cfg.debug)
     }
 
-    pub fn run(&mut self) {
-        loop {
-            let instruction = match self.fetch_instruction() {
-                Some(ins) => ins,
-                None => break,
-            };
+    fn load_rom(&mut self, path: PathBuf) -> Result<(), std::io::Error> {
+        todo!()
+    }
 
-            // TODO: execute instruction
-            // TODO: sleep
+    pub fn run(&mut self, sdl_context: Sdl) -> Result<(), String> {
+        self.display.draw_screen_buffer()?;
+        self.display.canvas.present();
+    
+        let mut event_pump = sdl_context.event_pump().map_err(|e| e.to_string())?;
+
+        'running: loop {
+            for event in event_pump.poll_iter() {
+                match event {
+                    Event::Quit { .. }
+                    | Event::KeyDown {
+                        keycode: Some(Keycode::Escape),
+                        ..
+                    } => break 'running,
+                    Event::KeyDown {keycode: Some(keycode), ..} => {
+                        if let Some(key) = get_input(keycode) {
+                            self.keypad[key as usize] = true;
+                            eprintln!("Keys pressed: {:?}", self.keypad);
+                        }
+                    }
+                    Event::KeyUp {keycode: Some(keycode), ..} => {
+                        if let Some(key) = get_input(keycode) {
+                            self.keypad[key as usize] = false;
+                            eprintln!("Keys pressed: {:?}", self.keypad);
+                        }
+                    }
+                    _ => {
+                        let op_code = self.fetch_opcode();
+
+                        // TODO: decode instruction
+                        // TODO: execute instruction
+                        // TODO: update timers
+                        // TODO: sleep
+                    }
+                }
+            }
         }
+
+        Ok(())
     }
 
-    fn fetch_instruction(&mut self) -> Option<Instruction> {
-        let op1 = self.memory.get(self.idx_reg as usize)?;
-        let op2 = self.memory.get((self.idx_reg + 1) as usize)?;
+    fn fetch_opcode(&mut self) -> Option<u16> {
+        let upper = *self.memory.get(self.pc as usize)? as u16;
+        let lower = *self.memory.get((self.pc + 1) as usize)? as u16;
 
-        // TODO: look up better way to do this
-        let mut op_code = *op1 as u16;
-        op_code <<= 8;
-        op_code += *op2 as u16;
+        self.pc += 2;
 
-        self.idx_reg += 2;
-
-        let instruction = Instruction::from_op_code(op_code);
-        match instruction {
-            Ok(ins) => Some(ins),
-            Err(_) => None,
-        }
+        Some((upper << 8) | lower)
     }
+
+
 }

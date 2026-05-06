@@ -3,32 +3,13 @@ use sdl2::rect::Rect;
 use sdl2::render::WindowCanvas;
 use sdl2::video::Window;
 
-use std::ops::{Deref, DerefMut};
-
-const PIXEL_SIZE: u32 = 11;
+const PIXEL_SIZE: u32 = 10;
 pub const SCREEN_WIDTH: u32 = 64 * PIXEL_SIZE;
 pub const SCREEN_HEIGHT: u32 = 32 * PIXEL_SIZE;
 
-pub struct ScreenBuffer([[bool; 64]; 32]);
-impl ScreenBuffer {
-    pub fn new() -> Self {
-        ScreenBuffer([[false; 64]; 32])
-    }
-}
-impl Deref for ScreenBuffer {
-    type Target = [[bool; 64]; 32];
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-impl DerefMut for ScreenBuffer {
-    fn deref_mut(&mut self) -> &mut [[bool; 64]; 32] {
-        &mut self.0
-    }
-}
-
 pub struct C8Display {
     pub canvas: WindowCanvas,
+    buff: [bool; 64 * 32],
     on_color: Color,
     off_color: Color,
     debug_lines: bool,
@@ -43,6 +24,7 @@ impl C8Display {
         let canvas = window.into_canvas().build().map_err(|e| e.to_string())?;
         Ok(C8Display {
             canvas,
+            buff: [false; 64 * 32],
             on_color,
             off_color,
             debug_lines,
@@ -69,10 +51,10 @@ impl C8Display {
         Ok(())
     }
 
-    pub fn draw_screen_buffer(&mut self, buff: ScreenBuffer) -> Result<(), String> {
+    pub fn draw_screen_buffer(&mut self) -> Result<(), String> {
         for x in 0..64 {
             for y in 0..32 {
-                let color = match buff.0[y][x] {
+                let color = match self.buff[y * 64 + x] {
                     true => self.on_color,
                     false => self.off_color,
                 };

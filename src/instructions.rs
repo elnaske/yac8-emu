@@ -11,4 +11,8 @@ impl Instruction {
     pub fn from_op_code(op_code: u16) -> Result<Instruction, String> {
         todo!()
     }
+
+    pub fn execute(&self) -> Result<(), String> {
+        todo!()
+    }
 }
