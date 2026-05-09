@@ -1,15 +1,17 @@
 use sdl2::Sdl;
-use sdl2::pixels::Color;
-use sdl2::video::Window;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
+use sdl2::pixels::Color;
+use sdl2::video::Window;
 
 use std::default::Default;
+use std::fs::File;
+use std::io::Read;
 use std::path::PathBuf;
 
 use crate::display::C8Display;
-use crate::instructions::Instruction;
 use crate::input::get_input;
+use crate::instructions::Instruction;
 
 const FONT_DATA: [u8; 80] = [
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
@@ -31,10 +33,10 @@ const FONT_DATA: [u8; 80] = [
 ];
 
 pub struct C8Config {
-   pub pixel_size: u32,
-   pub on_color: Color,
-   pub off_color: Color,
-   pub debug: bool,
+    pub pixel_size: u32,
+    pub on_color: Color,
+    pub off_color: Color,
+    pub debug: bool,
 }
 impl Default for C8Config {
     fn default() -> Self {
@@ -43,7 +45,12 @@ impl Default for C8Config {
 }
 impl C8Config {
     pub fn new(pixel_size: u32, on_color: Color, off_color: Color, debug: bool) -> Self {
-        C8Config { pixel_size, on_color, off_color, debug }
+        C8Config {
+            pixel_size,
+            on_color,
+            off_color,
+            debug,
+        }
     }
 }
 
@@ -57,6 +64,7 @@ pub struct Chip8 {
     delay_timer: u8,
     sound_timer: u8,
     keypad: [bool; 16],
+    debug: bool,
 }
 impl Chip8 {
     pub fn new(
@@ -77,11 +85,10 @@ impl Chip8 {
             delay_timer: 0,
             sound_timer: 0,
             keypad: [false; 16],
+            debug,
         };
 
         state.memory[0x50..=0x09F].copy_from_slice(&FONT_DATA);
-
-        // TODO: load rom
 
         Ok(state)
     }
@@ -91,13 +98,20 @@ impl Chip8 {
     }
 
     fn load_rom(&mut self, path: PathBuf) -> Result<(), std::io::Error> {
-        todo!()
+        let mut file = File::open(path)?;
+        file.read(&mut self.memory[0x200..])?;
+        Ok(())
     }
 
-    pub fn run(&mut self, sdl_context: Sdl) -> Result<(), String> {
+    pub fn run(&mut self, rom_path: PathBuf, sdl_context: Sdl) -> Result<(), String> {
+        self.load_rom(rom_path).map_err(|e| e.to_string())?;
+        if self.debug {
+            eprintln!("Load rom success");
+        }
+
         self.display.draw_screen_buffer()?;
         self.display.canvas.present();
-    
+
         let mut event_pump = sdl_context.event_pump().map_err(|e| e.to_string())?;
 
         'running: loop {
@@ -108,20 +122,26 @@ impl Chip8 {
                         keycode: Some(Keycode::Escape),
                         ..
                     } => break 'running,
-                    Event::KeyDown {keycode: Some(keycode), ..} => {
+                    Event::KeyDown {
+                        keycode: Some(keycode),
+                        ..
+                    } => {
                         if let Some(key) = get_input(keycode) {
                             self.keypad[key as usize] = true;
                             eprintln!("Keys pressed: {:?}", self.keypad);
                         }
                     }
-                    Event::KeyUp {keycode: Some(keycode), ..} => {
+                    Event::KeyUp {
+                        keycode: Some(keycode),
+                        ..
+                    } => {
                         if let Some(key) = get_input(keycode) {
                             self.keypad[key as usize] = false;
                             eprintln!("Keys pressed: {:?}", self.keypad);
                         }
                     }
                     _ => {
-                        let op_code = self.fetch_opcode();
+                        // let op_code = self.fetch_opcode();
 
                         // TODO: decode instruction
                         // TODO: execute instruction
@@ -143,6 +163,4 @@ impl Chip8 {
 
         Some((upper << 8) | lower)
     }
-
-
 }
