@@ -1,24 +1,28 @@
 extern crate sdl2;
 
-use std::{env, path::PathBuf};
+pub mod config;
+use config::C8Config;
 
 pub mod display;
 use display::{SCREEN_HEIGHT, SCREEN_WIDTH};
 
 pub mod system;
-use system::{C8Config, Chip8};
+use system::Chip8;
 
 pub mod input;
 pub mod instructions;
 
 fn main() {
-    let args = env::args().collect::<Vec<String>>();
-    let rom_path = match args.get(0) {
-        Some(s) => {
-            // TODO: check file extension
-            PathBuf::from(s)
-        }
-        None => panic!("No arguments found"),
+    let cfg = {
+        let mut cfg = C8Config::parse_args().expect("Error parsing arguments");
+
+        cfg.debug = true; // TODO: base this on whether built in release
+        cfg
+    };
+
+    let rom_path = match cfg.rom_path {
+        Some(ref path) => path.clone(),
+        None => panic!("Invalid ROM path"),
     };
 
     let sdl_context = sdl2::init().unwrap();
@@ -31,12 +35,6 @@ fn main() {
         .build()
         .expect("Failed to create window");
 
-    let cfg = {
-        let mut cfg = C8Config::default();
-        cfg.debug = true;
-        cfg
-    };
-
-    let mut chip8 = Chip8::from_config(window, cfg).expect("Failed to initialize state");
+    let mut chip8 = Chip8::from_config(window, &cfg).expect("Failed to initialize state");
     chip8.run(rom_path, sdl_context).expect("Runtime error");
 }

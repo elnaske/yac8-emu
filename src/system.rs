@@ -4,18 +4,15 @@ use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::video::Window;
 
-use std::default::Default;
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use crate::config::C8Config;
 use crate::display::C8Display;
 use crate::input::get_input;
 use crate::instructions::Instruction;
-
-const INSTRUCTIONS_PER_SECOND: u64 = 700;
-const INSTRUCTION_DELAY_MSEC: Duration = Duration::from_millis(1000 / INSTRUCTIONS_PER_SECOND);
 
 const FONT_DATA: [u8; 80] = [
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
@@ -36,28 +33,6 @@ const FONT_DATA: [u8; 80] = [
     0xF0, 0x80, 0xF0, 0x80, 0x80, // F
 ];
 
-pub struct C8Config {
-    pub pixel_size: u32,
-    pub on_color: Color,
-    pub off_color: Color,
-    pub debug: bool,
-}
-impl Default for C8Config {
-    fn default() -> Self {
-        C8Config::new(10, Color::WHITE, Color::BLACK, false)
-    }
-}
-impl C8Config {
-    pub fn new(pixel_size: u32, on_color: Color, off_color: Color, debug: bool) -> Self {
-        C8Config {
-            pixel_size,
-            on_color,
-            off_color,
-            debug,
-        }
-    }
-}
-
 pub struct Chip8 {
     memory: [u8; 4096],
     display: C8Display,
@@ -68,6 +43,7 @@ pub struct Chip8 {
     delay_timer: u8,
     sound_timer: u8,
     keypad: [bool; 16],
+    instructions_per_second: u32,
     debug: bool,
 }
 impl Chip8 {
@@ -75,6 +51,7 @@ impl Chip8 {
         window: Window,
         on_color: Color,
         off_color: Color,
+        instructions_per_second: u32,
         debug: bool,
     ) -> Result<Self, String> {
         let display = C8Display::new(window, on_color, off_color, debug)?;
@@ -89,6 +66,7 @@ impl Chip8 {
             delay_timer: 0,
             sound_timer: 0,
             keypad: [false; 16],
+            instructions_per_second,
             debug,
         };
 
@@ -97,20 +75,26 @@ impl Chip8 {
         Ok(state)
     }
 
-    pub fn from_config(window: Window, cfg: C8Config) -> Result<Self, String> {
-        Chip8::new(window, cfg.on_color, cfg.off_color, cfg.debug)
+    pub fn from_config(window: Window, cfg: &C8Config) -> Result<Self, String> {
+        Chip8::new(
+            window,
+            cfg.on_color,
+            cfg.off_color,
+            cfg.instructions_per_second,
+            cfg.debug,
+        )
     }
 
-    fn load_rom(&mut self, path: PathBuf) -> Result<(), std::io::Error> {
+    fn load_rom(&mut self, path: &PathBuf) -> Result<(), std::io::Error> {
         let mut file = File::open(path)?;
-        file.read(&mut self.memory[0x200..])?; // TODO: fix clippy error
+        file.read_exact(&mut self.memory[0x200..])?;
         Ok(())
     }
 
     pub fn run(&mut self, rom_path: PathBuf, sdl_context: Sdl) -> Result<(), String> {
-        self.load_rom(rom_path).map_err(|e| e.to_string())?;
+        self.load_rom(&rom_path).map_err(|e| e.to_string())?;
         if self.debug {
-            eprintln!("Load rom success");
+            eprintln!("Loaded ROM: `{:?}`", rom_path); // TODO: absolute path
         }
 
         self.display.draw_screen_buffer()?;
@@ -119,6 +103,8 @@ impl Chip8 {
         let mut event_pump = sdl_context.event_pump().map_err(|e| e.to_string())?;
 
         'running: loop {
+            let start_time = Instant::now();
+
             for event in event_pump.poll_iter() {
                 match event {
                     Event::Quit { .. }
@@ -148,8 +134,6 @@ impl Chip8 {
                 }
             }
 
-            let start_time = Instant::now();
-
             let op_code = self.fetch_opcode();
 
             if self.debug {
@@ -173,8 +157,11 @@ impl Chip8 {
                         }
 
                         let elapsed = start_time.elapsed();
-                        if elapsed < INSTRUCTION_DELAY_MSEC {
-                            std::thread::sleep(INSTRUCTION_DELAY_MSEC - elapsed);
+
+                        let instruction_delay_msec: Duration =
+                            Duration::from_millis(1000 / self.instructions_per_second as u64);
+                        if elapsed < instruction_delay_msec {
+                            std::thread::sleep(instruction_delay_msec - elapsed);
                         }
                     }
                     None => {
