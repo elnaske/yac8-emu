@@ -8,10 +8,14 @@ use std::default::Default;
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use crate::display::C8Display;
 use crate::input::get_input;
 use crate::instructions::Instruction;
+
+const INSTRUCTIONS_PER_SECOND: u64 = 700;
+const INSTRUCTION_DELAY_MSEC: Duration = Duration::from_millis(1000 / INSTRUCTIONS_PER_SECOND);
 
 const FONT_DATA: [u8; 80] = [
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
@@ -99,7 +103,7 @@ impl Chip8 {
 
     fn load_rom(&mut self, path: PathBuf) -> Result<(), std::io::Error> {
         let mut file = File::open(path)?;
-        file.read(&mut self.memory[0x200..])?;
+        file.read(&mut self.memory[0x200..])?; // TODO: fix clippy error
         Ok(())
     }
 
@@ -140,15 +144,43 @@ impl Chip8 {
                             eprintln!("Keys pressed: {:?}", self.keypad);
                         }
                     }
-                    _ => {
-                        // let op_code = self.fetch_opcode();
-
-                        // TODO: decode instruction
-                        // TODO: execute instruction
-                        // TODO: update timers
-                        // TODO: sleep
-                    }
+                    _ => {}
                 }
+            }
+
+            let start_time = Instant::now();
+
+            let op_code = self.fetch_opcode();
+
+            if self.debug {
+                eprintln!("{:?}", op_code);
+            }
+
+            match op_code {
+                None => {
+                    eprintln!("Reached end of file; Terminating");
+                    break 'running;
+                }
+                Some(op) => match Instruction::from_op_code(op) {
+                    Some(instruction) => {
+                        self.execute_instruction(instruction)?;
+
+                        if self.delay_timer > 0 {
+                            self.delay_timer -= 1;
+                        }
+                        if self.sound_timer > 0 {
+                            self.sound_timer -= 1;
+                        }
+
+                        let elapsed = start_time.elapsed();
+                        if elapsed < INSTRUCTION_DELAY_MSEC {
+                            std::thread::sleep(INSTRUCTION_DELAY_MSEC - elapsed);
+                        }
+                    }
+                    None => {
+                        return Err(format!("Invalid instruction `{}`", op));
+                    }
+                },
             }
         }
 
@@ -162,5 +194,12 @@ impl Chip8 {
         self.pc += 2;
 
         Some((upper << 8) | lower)
+    }
+
+    fn execute_instruction(&mut self, instruction: Instruction) -> Result<(), String> {
+        match instruction {
+            _ => (), // TODO
+        }
+        Ok(())
     }
 }

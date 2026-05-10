@@ -8,11 +8,9 @@ pub enum Instruction {
     // TODO: remaining instructions
 }
 impl Instruction {
-    pub fn from_op_code(op_code: u16) -> Result<Instruction, String> {
-        todo!()
-    }
-
-    pub fn execute(&self) -> Result<(), String> {
-        todo!()
+    pub fn from_op_code(op_code: u16) -> Option<Instruction> {
+        match op_code {
+            _ => Some(Instruction::ClearScreen), // TODO
+        }
     }
 }
