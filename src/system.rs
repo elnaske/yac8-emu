@@ -87,7 +87,7 @@ impl Chip8 {
 
     fn load_rom(&mut self, path: &PathBuf) -> Result<(), std::io::Error> {
         let mut file = File::open(path)?;
-        file.read_exact(&mut self.memory[0x200..])?;
+        file.read(&mut self.memory[0x200..])?; // TODO: read_exact doesn't work on all systems
         Ok(())
     }
 
