@@ -185,7 +185,22 @@ impl Chip8 {
 
     fn execute_instruction(&mut self, instruction: Instruction) -> Result<(), String> {
         match instruction {
-            _ => (), // TODO
+            Instruction::ClearScreen => {
+                self.display.buff.fill(false);
+            }
+            Instruction::Jump(address) => {
+                self.pc = address;
+            }
+            Instruction::SetRegister { reg, val } => {
+                self.var_regs[reg as usize] = val;
+            }
+            Instruction::AddRegister { reg, val } => {
+                self.var_regs[reg as usize] += val;
+            }
+            Instruction::SetI(val) => {
+                self.idx_reg = val;
+            }
+            Instruction::Draw { x, y, val } => todo!(),
         }
         Ok(())
     }

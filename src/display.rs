@@ -9,7 +9,7 @@ pub const SCREEN_HEIGHT: u32 = 32 * PIXEL_SIZE;
 
 pub struct C8Display {
     pub canvas: WindowCanvas,
-    buff: [bool; 64 * 32],
+    pub buff: [bool; 64 * 32],
     on_color: Color,
     off_color: Color,
     debug_lines: bool,
