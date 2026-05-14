@@ -10,7 +10,6 @@ pub mod system;
 use system::Chip8;
 
 pub mod input;
-pub mod instructions;
 
 fn main() {
     let cfg = {

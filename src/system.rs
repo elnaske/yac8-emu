@@ -12,7 +12,6 @@ use std::time::{Duration, Instant};
 use crate::config::C8Config;
 use crate::display::C8Display;
 use crate::input::get_input;
-use crate::instructions::Instruction;
 
 const FONT_DATA: [u8; 80] = [
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
@@ -136,7 +135,9 @@ impl Chip8 {
 
             let op_code = self.fetch_opcode();
 
-            if self.debug && let Some(oc) = op_code {
+            if self.debug
+                && let Some(oc) = op_code
+            {
                 eprintln!("Opcode: {:#x}", oc);
             }
 
@@ -145,29 +146,24 @@ impl Chip8 {
                     eprintln!("Reached end of file; Terminating");
                     break 'running;
                 }
-                Some(op) => match Instruction::from_op_code(op) {
-                    Some(instruction) => {
-                        self.execute_instruction(instruction)?;
+                Some(op) => {
+                    self.execute_opcode(op)?;
 
-                        if self.delay_timer > 0 {
-                            self.delay_timer -= 1;
-                        }
-                        if self.sound_timer > 0 {
-                            self.sound_timer -= 1;
-                        }
-
-                        let elapsed = start_time.elapsed();
-
-                        let instruction_delay_msec: Duration =
-                            Duration::from_millis(1000 / self.instructions_per_second as u64);
-                        if elapsed < instruction_delay_msec {
-                            std::thread::sleep(instruction_delay_msec - elapsed);
-                        }
+                    if self.delay_timer > 0 {
+                        self.delay_timer -= 1;
                     }
-                    None => {
-                        return Err(format!("Invalid instruction `{}`", op));
+                    if self.sound_timer > 0 {
+                        self.sound_timer -= 1;
                     }
-                },
+
+                    let elapsed = start_time.elapsed();
+
+                    let instruction_delay_msec: Duration =
+                        Duration::from_millis(1000 / self.instructions_per_second as u64);
+                    if elapsed < instruction_delay_msec {
+                        std::thread::sleep(instruction_delay_msec - elapsed);
+                    }
+                }
             }
         }
 
@@ -183,36 +179,55 @@ impl Chip8 {
         Some((upper << 8) | lower)
     }
 
-    fn execute_instruction(&mut self, instruction: Instruction) -> Result<(), String> {
-        // TODO: get rid of Instruction enum? would probably reduce confusion about bit sizes
-        match instruction {
-            Instruction::ClearScreen => {
+    fn execute_opcode(&mut self, op_code: u16) -> Result<(), String> {
+        let nib1 = (op_code & 0xF000) >> 12;
+        let nib2 = (op_code & 0x0F00) >> 8;
+        let nib3 = (op_code & 0x00F0) >> 4;
+        let nib4 = op_code & 0x000F;
+
+        match (nib1, nib2, nib3, nib4) {
+            (0x0, 0x0, 0xE, 0x0) => {
+                // 00E0 - Clear Screen
                 self.display.buff.fill(false);
                 self.display.draw_screen_buffer()?;
             }
-            Instruction::Jump(address) => {
-                self.pc = address;
+            (0x1, _, _, _) => {
+                // 1NNN - Jump
+                self.pc = op_code & 0x0FFF;
             }
-            Instruction::SetRegister { reg, val } => {
-                self.var_regs[reg as usize] = val;
+            (0x6, x, _, _) => {
+                // 6XNN - Set Register
+                self.var_regs[x as usize] = (op_code & 0x0FF) as u8;
             }
-            Instruction::AddRegister { reg, val } => {
-                self.var_regs[reg as usize] += val;
+            (0x7, x, _, _) => {
+                // 7XNN - Add to Register
+                self.var_regs[x as usize] += (op_code & 0x0FF) as u8;
             }
-            Instruction::SetI(val) => {
-                self.idx_reg = val;
+            (0xA, _, _, _) => {
+                // ANNN - Set Index Register
+                self.idx_reg = op_code & 0x0FFF;
             }
-            Instruction::Draw { x: vx, y: vy, sprite_size} => {
-                let x = self.var_regs[vx as usize];
-                let y = self.var_regs[vy as usize];
+            (0xD, x, y, height) => {
+                // DXYN - Draw to Screen
+                let screen_x = self.var_regs[x as usize] as usize;
+                let screen_y = self.var_regs[y as usize] as usize;
 
                 self.var_regs[0xF] = 0;
 
-                for row in 0..sprite_size {
-                    let row_byte = self.memory[self.idx_reg as usize + row as usize];
-                    for col in 0..8 {
-                        if (row_byte & (0x80 >> col)) != 0 {
-                            let pixel_idx = ((y + row) as usize * 64 + (x + col) as usize) % (64 * 32);
+                for row in 0..height as usize {
+                    // stop at bottom edge of screen
+                    if screen_y + row >= 32 {
+                        break;
+                    }
+
+                    let row_byte = self.memory[self.idx_reg as usize + row];
+                    for col in 0..8 as usize {
+                        // stop at right edge of screen
+                        if screen_x + col >= 64 {
+                            break;
+                        }
+                        if row_byte & (0x80 >> col) > 0 {
+                            let pixel_idx = (screen_y + row) * 64 + (screen_x + col);
                             if self.display.buff[pixel_idx] {
                                 self.var_regs[0xF] = 1;
                             }
@@ -222,7 +237,8 @@ impl Chip8 {
                 }
 
                 self.display.draw_screen_buffer()?;
-            },
+            }
+            _ => todo!("Remaining instructions"),
         }
         Ok(())
     }
