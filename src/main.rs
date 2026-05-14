@@ -1,13 +1,29 @@
 extern crate sdl2;
 
-use sdl2::event::Event;
-use sdl2::keyboard::Keycode;
-use sdl2::pixels::Color;
+pub mod config;
+use config::C8Config;
 
 pub mod display;
-use display::{C8Display, SCREEN_HEIGHT, SCREEN_WIDTH, ScreenBuffer};
+use display::{SCREEN_HEIGHT, SCREEN_WIDTH};
+
+pub mod system;
+use system::Chip8;
+
+pub mod input;
 
 fn main() {
+    let cfg = {
+        let mut cfg = C8Config::parse_args().expect("Error parsing arguments");
+
+        cfg.debug = true; // TODO: base this on whether built in release
+        cfg
+    };
+
+    let rom_path = match cfg.rom_path {
+        Some(ref path) => path.clone(),
+        None => panic!("Invalid ROM path"),
+    };
+
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
 
@@ -18,39 +34,6 @@ fn main() {
         .build()
         .expect("Failed to create window");
 
-    let mut display =
-        C8Display::new(window, Color::WHITE, Color::BLACK, true).expect("Failed to create display");
-    let screen = ScreenBuffer::new();
-
-    // let mut screen = ScreenBuffer::new();
-    // for x in 0..64 {
-    //     for y in 0..32 {
-    //         screen[y][x] = (x % 2 == 0) ^ (y % 2 == 0);
-    //     }
-    // }
-
-    display
-        .draw_screen_buffer(screen)
-        .expect("Failed to draw on screen");
-    display.canvas.present();
-
-    let mut event_pump = sdl_context.event_pump().unwrap();
-
-    'running: loop {
-        for event in event_pump.poll_iter() {
-            match event {
-                Event::Quit { .. }
-                | Event::KeyDown {
-                    keycode: Some(Keycode::Escape),
-                    ..
-                } => break 'running,
-                _ => {
-                    // main logic goes here
-                }
-            }
-        }
-    }
-
-    // canvas.clear();
-    // canvas.present();
+    let mut chip8 = Chip8::from_config(window, &cfg).expect("Failed to initialize state");
+    chip8.run(rom_path, sdl_context).expect("Runtime error");
 }
