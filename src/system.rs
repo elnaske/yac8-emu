@@ -221,7 +221,7 @@ impl Chip8 {
                     }
 
                     let row_byte = self.memory[self.idx_reg as usize + row];
-                    for col in 0..8 as usize {
+                    for col in 0..8_usize {
                         // stop at right edge of screen
                         if screen_x + col >= 64 {
                             break;
