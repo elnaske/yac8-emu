@@ -3,7 +3,7 @@ use sdl2::rect::Rect;
 use sdl2::render::WindowCanvas;
 use sdl2::video::Window;
 
-const PIXEL_SIZE: u32 = 10;
+const PIXEL_SIZE: u32 = 20;
 pub const SCREEN_WIDTH: u32 = 64 * PIXEL_SIZE;
 pub const SCREEN_HEIGHT: u32 = 32 * PIXEL_SIZE;
 
@@ -61,6 +61,7 @@ impl C8Display {
                 self.draw_pixel(x as i32, y as i32, color)?;
             }
         }
+        self.canvas.present();
         Ok(())
     }
 }

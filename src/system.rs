@@ -136,8 +136,8 @@ impl Chip8 {
 
             let op_code = self.fetch_opcode();
 
-            if self.debug {
-                eprintln!("{:?}", op_code);
+            if self.debug && let Some(oc) = op_code {
+                eprintln!("Opcode: {:#x}", oc);
             }
 
             match op_code {
@@ -184,9 +184,11 @@ impl Chip8 {
     }
 
     fn execute_instruction(&mut self, instruction: Instruction) -> Result<(), String> {
+        // TODO: get rid of Instruction enum? would probably reduce confusion about bit sizes
         match instruction {
             Instruction::ClearScreen => {
                 self.display.buff.fill(false);
+                self.display.draw_screen_buffer()?;
             }
             Instruction::Jump(address) => {
                 self.pc = address;
@@ -200,7 +202,27 @@ impl Chip8 {
             Instruction::SetI(val) => {
                 self.idx_reg = val;
             }
-            Instruction::Draw { x, y, val } => todo!(),
+            Instruction::Draw { x: vx, y: vy, sprite_size} => {
+                let x = self.var_regs[vx as usize];
+                let y = self.var_regs[vy as usize];
+
+                self.var_regs[0xF] = 0;
+
+                for row in 0..sprite_size {
+                    let row_byte = self.memory[self.idx_reg as usize + row as usize];
+                    for col in 0..8 {
+                        if (row_byte & (0x80 >> col)) != 0 {
+                            let pixel_idx = ((y + row) as usize * 64 + (x + col) as usize) % (64 * 32);
+                            if self.display.buff[pixel_idx] {
+                                self.var_regs[0xF] = 1;
+                            }
+                            self.display.buff[pixel_idx] ^= true;
+                        }
+                    }
+                }
+
+                self.display.draw_screen_buffer()?;
+            },
         }
         Ok(())
     }
