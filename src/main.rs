@@ -12,12 +12,7 @@ use system::Chip8;
 pub mod input;
 
 fn main() {
-    let cfg = {
-        let mut cfg = C8Config::parse_args().expect("Error parsing arguments");
-
-        cfg.debug = true; // TODO: base this on whether built in release
-        cfg
-    };
+    let cfg = C8Config::parse_args().expect("Error parsing arguments");
 
     let rom_path = match cfg.rom_path {
         Some(ref path) => path.clone(),
@@ -34,6 +29,6 @@ fn main() {
         .build()
         .expect("Failed to create window");
 
-    let mut chip8 = Chip8::from_config(window, &cfg).expect("Failed to initialize state");
+    let mut chip8 = Chip8::from_config(window, cfg).expect("Failed to initialize state");
     chip8.run(rom_path, sdl_context).expect("Runtime error");
 }

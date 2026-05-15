@@ -4,6 +4,7 @@ use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::video::Window;
 
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
@@ -45,6 +46,7 @@ pub struct Chip8 {
     instructions_per_second: u32,
     debug: bool,
     paused: bool,
+    breakpoints: HashSet<u16>,
 }
 impl Chip8 {
     pub fn new(
@@ -52,6 +54,7 @@ impl Chip8 {
         on_color: Color,
         off_color: Color,
         instructions_per_second: u32,
+        breakpoints: HashSet<u16>,
         debug: bool,
     ) -> Result<Self, String> {
         let display = C8Display::new(window, on_color, off_color, debug)?;
@@ -69,6 +72,7 @@ impl Chip8 {
             instructions_per_second,
             debug,
             paused: false,
+            breakpoints,
         };
 
         state.memory[0x50..=0x09F].copy_from_slice(&FONT_DATA);
@@ -76,12 +80,13 @@ impl Chip8 {
         Ok(state)
     }
 
-    pub fn from_config(window: Window, cfg: &C8Config) -> Result<Self, String> {
+    pub fn from_config(window: Window, cfg: C8Config) -> Result<Self, String> {
         Chip8::new(
             window,
             cfg.on_color,
             cfg.off_color,
             cfg.instructions_per_second,
+            cfg.breakpoints,
             cfg.debug,
         )
     }
@@ -106,6 +111,11 @@ impl Chip8 {
         'running: loop {
             let start_time = Instant::now();
 
+            if self.breakpoints.contains(&self.pc) {
+                self.paused = true;
+                self.breakpoints.remove(&self.pc);
+            }
+
             for event in event_pump.poll_iter() {
                 match event {
                     Event::Quit { .. }
@@ -117,13 +127,18 @@ impl Chip8 {
                         keycode: Some(keycode),
                         ..
                     } => {
+                        // keypad
                         if let Some(key) = get_input(keycode) {
                             self.keypad[key as usize] = true;
                             eprintln!("Keys pressed: {:?}", self.keypad);
                         }
+
+                        // pause toggle
                         if keycode == Keycode::Space {
                             self.paused ^= true;
                         }
+
+                        // manual advance
                         if self.paused && keycode == Keycode::N {
                             if let Err(e) = self.run_next_instruction() {
                                 eprint!("{}", e);
@@ -135,6 +150,7 @@ impl Chip8 {
                         keycode: Some(keycode),
                         ..
                     } => {
+                        // keypad release
                         if let Some(key) = get_input(keycode) {
                             self.keypad[key as usize] = false;
                             eprintln!("Keys pressed: {:?}", self.keypad);
