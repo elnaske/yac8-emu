@@ -44,6 +44,7 @@ pub struct Chip8 {
     keypad: [bool; 16],
     instructions_per_second: u32,
     debug: bool,
+    paused: bool,
 }
 impl Chip8 {
     pub fn new(
@@ -67,6 +68,7 @@ impl Chip8 {
             keypad: [false; 16],
             instructions_per_second,
             debug,
+            paused: false,
         };
 
         state.memory[0x50..=0x09F].copy_from_slice(&FONT_DATA);
@@ -119,6 +121,15 @@ impl Chip8 {
                             self.keypad[key as usize] = true;
                             eprintln!("Keys pressed: {:?}", self.keypad);
                         }
+                        if keycode == Keycode::Space {
+                            self.paused ^= true;
+                        }
+                        if self.paused && keycode == Keycode::N {
+                            if let Err(e) = self.run_next_instruction() {
+                                eprint!("{}", e);
+                                break 'running;
+                            }
+                        }
                     }
                     Event::KeyUp {
                         keycode: Some(keycode),
@@ -133,41 +144,49 @@ impl Chip8 {
                 }
             }
 
-            let op_code = self.fetch_opcode();
-
-            if self.debug
-                && let Some(oc) = op_code
-            {
-                eprintln!("Opcode: {:#x}", oc);
-            }
-
-            match op_code {
-                None => {
-                    eprintln!("Reached end of file; Terminating");
+            if !self.paused {
+                if let Err(e) = self.run_next_instruction() {
+                    eprint!("{}", e);
                     break 'running;
                 }
-                Some(op) => {
-                    self.execute_opcode(op)?;
 
-                    if self.delay_timer > 0 {
-                        self.delay_timer -= 1;
-                    }
-                    if self.sound_timer > 0 {
-                        self.sound_timer -= 1;
-                    }
+                let elapsed = start_time.elapsed();
 
-                    let elapsed = start_time.elapsed();
-
-                    let instruction_delay_msec: Duration =
-                        Duration::from_millis(1000 / self.instructions_per_second as u64);
-                    if elapsed < instruction_delay_msec {
-                        std::thread::sleep(instruction_delay_msec - elapsed);
-                    }
+                let instruction_delay_msec: Duration =
+                    Duration::from_millis(1000 / self.instructions_per_second as u64);
+                if elapsed < instruction_delay_msec {
+                    std::thread::sleep(instruction_delay_msec - elapsed);
                 }
             }
         }
 
         Ok(())
+    }
+
+    fn run_next_instruction(&mut self) -> Result<(), String> {
+        let op_code = self.fetch_opcode();
+
+        if self.debug
+            && let Some(oc) = op_code
+        {
+            eprintln!("Opcode: {:#x}", oc);
+        }
+
+        match op_code {
+            None => Err("Reached end of file; Terminating".to_string()),
+            Some(op) => {
+                self.execute_opcode(op)?;
+
+                if self.delay_timer > 0 {
+                    self.delay_timer -= 1;
+                }
+                if self.sound_timer > 0 {
+                    self.sound_timer -= 1;
+                }
+
+                Ok(())
+            }
+        }
     }
 
     fn fetch_opcode(&mut self) -> Option<u16> {
