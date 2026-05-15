@@ -54,9 +54,7 @@ impl C8Config {
                     }
                     "--cycles" => {
                         cfg.instructions_per_second = match iterator.next() {
-                            Some(arg) => {
-                                todo!("str to u32 conversion")
-                            }
+                            Some(arg) => Ok(arg.parse::<u32>().unwrap()),
                             None => Err("Missing argument after `--cycles`".to_string()),
                         }?;
                     }
