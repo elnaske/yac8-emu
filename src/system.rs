@@ -192,49 +192,8 @@ impl Chip8 {
                 }
             }
 
-            // debugger ui
             if self.debug {
-                self.display.canvas.run(|ctx| {
-                    egui::Window::new("Program State").show(ctx, |ui| {
-                        if ui.add(egui::Button::new("Reset ROM")).clicked() {
-                            self.reset = true;
-                        }
-                        ui.separator();
-                        ui.label("Variable Registers:");
-                        for (reg, val) in self.var_regs.iter().enumerate() {
-                            ui.label(format!("\t{:x}: {:#x}", reg, val));
-                        }
-                        ui.separator();
-                        ui.label(format!("I: {:#x}", self.idx_reg));
-                        ui.label(format!("PC: {:#x}", self.pc));
-                        ui.label(format!("Delay Timer: {:#x}", self.delay_timer));
-                        ui.label(format!("Sound Timer: {:#x}", self.sound_timer));
-                        ui.separator();
-                        ui.label(format!("Stack: {:#x?}", self.stack));
-                    });
-
-                    egui::Window::new("Debug Information").show(ctx, |ui| {
-                        ui.add(
-                            egui::Slider::new(&mut self.instructions_per_second, 1..=1000)
-                                .text("Instructions_per_second"),
-                        );
-                        ui.label(format!("Paused: {}", self.paused));
-                        ui.label("Breakpoints:");
-                        for breakpoint in self.breakpoints.iter() {
-                            ui.label(format!("\t{breakpoint}"));
-                        }
-                    });
-
-                    egui::Window::new("Memory")
-                        .vscroll(true)
-                        .anchor(Align2::RIGHT_TOP, [-15.0, 15.0])
-                        .show(ctx, |ui| {
-                            // TODO: alignment
-                            ui.label(format!("{:x?}", self.memory));
-                        });
-                });
-                self.display.canvas.paint();
-                self.display.canvas.present();
+                self.show_debug_ui();
             }
 
             if !self.paused {
@@ -364,5 +323,50 @@ impl Chip8 {
             _ => todo!("Remaining instructions"),
         }
         Ok(())
+    }
+
+    // TODO: move into display.rs
+    fn show_debug_ui(&mut self) {
+        self.display.canvas.run(|ctx| {
+            egui::Window::new("Program State").show(ctx, |ui| {
+                if ui.add(egui::Button::new("Reset ROM")).clicked() {
+                    self.reset = true;
+                }
+                ui.separator();
+                ui.label("Variable Registers:");
+                for (reg, val) in self.var_regs.iter().enumerate() {
+                    ui.label(format!("\t{:x}: {:#x}", reg, val));
+                }
+                ui.separator();
+                ui.label(format!("I: {:#x}", self.idx_reg));
+                ui.label(format!("PC: {:#x}", self.pc));
+                ui.label(format!("Delay Timer: {:#x}", self.delay_timer));
+                ui.label(format!("Sound Timer: {:#x}", self.sound_timer));
+                ui.separator();
+                ui.label(format!("Stack: {:#x?}", self.stack));
+            });
+
+            egui::Window::new("Debug Information").show(ctx, |ui| {
+                ui.add(
+                    egui::Slider::new(&mut self.instructions_per_second, 1..=1000)
+                        .text("Instructions_per_second"),
+                );
+                ui.label(format!("Paused: {}", self.paused));
+                ui.label("Breakpoints:");
+                for breakpoint in self.breakpoints.iter() {
+                    ui.label(format!("\t{breakpoint}"));
+                }
+            });
+
+            egui::Window::new("Memory")
+                .vscroll(true)
+                .anchor(Align2::RIGHT_TOP, [-15.0, 15.0])
+                .show(ctx, |ui| {
+                    // TODO: alignment
+                    ui.label(format!("{:x?}", self.memory));
+                });
+        });
+        self.display.canvas.paint();
+        self.display.canvas.present();
     }
 }

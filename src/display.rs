@@ -9,7 +9,7 @@ pub const SCREEN_WIDTH: u32 = 64 * PIXEL_SIZE;
 pub const SCREEN_HEIGHT: u32 = 32 * PIXEL_SIZE;
 
 pub struct C8Display {
-    pub canvas: EguiCanvas, // TODO: rename to egui
+    pub canvas: EguiCanvas,
     pub buff: [bool; 64 * 32],
     pub on_color: Color,
     pub off_color: Color,
@@ -22,7 +22,6 @@ impl C8Display {
         off_color: Color,
         debug_lines: bool,
     ) -> Result<Self, String> {
-        // let canvas = window.into_canvas().build().map_err(|e| e.to_string())?;
         let canvas = EguiCanvas::new(window);
         Ok(C8Display {
             canvas,
