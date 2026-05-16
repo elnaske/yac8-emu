@@ -23,7 +23,7 @@ fn main() {
     let video_subsystem = sdl_context.video().unwrap();
 
     let window = video_subsystem
-        .window("yac8-emu", SCREEN_WIDTH, SCREEN_HEIGHT)
+        .window("yac8-emu", SCREEN_WIDTH * 2, SCREEN_HEIGHT * 2) // TODO: hacky
         .position_centered()
         .opengl()
         .build()
