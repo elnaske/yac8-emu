@@ -117,6 +117,8 @@ impl Chip8 {
             }
 
             for event in event_pump.poll_iter() {
+                self.display.canvas.on_event(&event);
+
                 match event {
                     Event::Quit { .. }
                     | Event::KeyDown {
@@ -159,6 +161,28 @@ impl Chip8 {
                     _ => {}
                 }
             }
+
+            // debugger ui
+            self.display.canvas.run(|ctx| {
+                egui_sdl2::egui::Window::new("Program State").show(ctx, |ui| {
+                    ui.label("Variable Registers:");
+                    for (reg, val) in self.var_regs.iter().enumerate() {
+                        ui.label(format!("\t{:#x}: {:#x}", reg, val));
+                    }
+                    ui.label(format!("PC: {:#x}", self.pc));
+                });
+                
+                egui_sdl2::egui::Window::new("Debug Information").show(ctx, |ui| {
+                    ui.label(format!("Paused: {}", self.paused));
+                    ui.label("Breakpoints:");
+                    for breakpoint in self.breakpoints.iter() {
+                        ui.label(format!("\t{breakpoint}"));
+                    }
+                });
+            });
+            self.display.canvas.paint();
+            self.display.canvas.present();
+
 
             if !self.paused {
                 if let Err(e) = self.run_next_instruction() {
