@@ -11,9 +11,9 @@ pub const SCREEN_HEIGHT: u32 = 32 * PIXEL_SIZE;
 pub struct C8Display {
     pub canvas: EguiCanvas, // TODO: rename to egui
     pub buff: [bool; 64 * 32],
-    on_color: Color,
-    off_color: Color,
-    debug_lines: bool,
+    pub on_color: Color,
+    pub off_color: Color,
+    pub debug_lines: bool,
 }
 impl C8Display {
     pub fn new(
