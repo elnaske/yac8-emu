@@ -3,6 +3,8 @@ use sdl2::pixels::Color;
 use std::default::Default;
 use std::{env, path::PathBuf};
 
+use std::collections::HashSet;
+
 pub struct C8Config {
     pub rom_path: Option<PathBuf>,
     pub instructions_per_second: u32,
@@ -10,6 +12,7 @@ pub struct C8Config {
     pub on_color: Color,
     pub off_color: Color,
     pub debug: bool,
+    pub breakpoints: HashSet<u16>,
 }
 impl Default for C8Config {
     fn default() -> Self {
@@ -31,6 +34,7 @@ impl C8Config {
             on_color,
             off_color,
             debug,
+            breakpoints: HashSet::new(),
         }
     }
 
@@ -43,7 +47,7 @@ impl C8Config {
             panic!("Usage: yac8-emu {{path/to/rom}} {{flags}}");
         }
 
-        let mut iterator = args.iter().skip(1);
+        let mut iterator = args.iter().skip(1).peekable();
 
         while let Some(arg) = iterator.next() {
             if arg.starts_with("-") {
@@ -54,11 +58,24 @@ impl C8Config {
                     }
                     "--cycles" => {
                         cfg.instructions_per_second = match iterator.next() {
-                            Some(arg) => {
-                                todo!("str to u32 conversion")
-                            }
+                            Some(arg) => Ok(arg.parse::<u32>().unwrap()),
                             None => Err("Missing argument after `--cycles`".to_string()),
                         }?;
+                    }
+                    "--break" => {
+                        let program_start = 0x200;
+                        let bytes_per_opcode = 2;
+
+                        cfg.breakpoints = std::iter::from_fn(|| match iterator.peek() {
+                            Some(arg) if !arg.starts_with("-") => iterator.next(),
+                            _ => None,
+                        })
+                        .map(|arg| {
+                            program_start
+                                + bytes_per_opcode
+                                    * arg.parse::<u16>().expect("Failed to parse --break arg")
+                        })
+                        .collect();
                     }
                     "--pixel-size" => todo!(),
                     "--on-color" => todo!(),

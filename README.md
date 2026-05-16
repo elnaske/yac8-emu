@@ -1,6 +1,6 @@
 # Yet Another CHIP-8 Emulator
 
-A CHIP-8 emulator/interpreter written in Rust + SDL2.
+A CHIP-8 emulator/interpreter and debugger written in Rust + SDL2.
 
 ## Roadmap
 | Feature      | Status      |
@@ -10,6 +10,7 @@ A CHIP-8 emulator/interpreter written in Rust + SDL2.
 | System Specs | Done*       |
 | Timers       | Done*       |
 | Interpreter  | In progress |
+| Debugger     | In progress |
 | OpCodes      | 6/35        |
 
 ## Installation

@@ -1,18 +1,19 @@
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
-use sdl2::render::WindowCanvas;
 use sdl2::video::Window;
+
+use egui_sdl2::EguiCanvas;
 
 const PIXEL_SIZE: u32 = 20;
 pub const SCREEN_WIDTH: u32 = 64 * PIXEL_SIZE;
 pub const SCREEN_HEIGHT: u32 = 32 * PIXEL_SIZE;
 
 pub struct C8Display {
-    pub canvas: WindowCanvas,
+    pub canvas: EguiCanvas,
     pub buff: [bool; 64 * 32],
-    on_color: Color,
-    off_color: Color,
-    debug_lines: bool,
+    pub on_color: Color,
+    pub off_color: Color,
+    pub debug_lines: bool,
 }
 impl C8Display {
     pub fn new(
@@ -21,7 +22,7 @@ impl C8Display {
         off_color: Color,
         debug_lines: bool,
     ) -> Result<Self, String> {
-        let canvas = window.into_canvas().build().map_err(|e| e.to_string())?;
+        let canvas = EguiCanvas::new(window);
         Ok(C8Display {
             canvas,
             buff: [false; 64 * 32],
@@ -32,20 +33,20 @@ impl C8Display {
     }
 
     pub fn draw_pixel(&mut self, x: i32, y: i32, color: Color) -> Result<(), String> {
-        self.canvas.set_draw_color(color);
+        self.canvas.painter.canvas.set_draw_color(color);
 
         let pixel = Rect::new(
-            x * PIXEL_SIZE as i32,
-            y * PIXEL_SIZE as i32,
+            x * PIXEL_SIZE as i32 + SCREEN_WIDTH as i32 / 2, // TODO: hacky
+            y * PIXEL_SIZE as i32 + SCREEN_HEIGHT as i32 / 2,
             PIXEL_SIZE,
             PIXEL_SIZE,
         );
 
-        self.canvas.fill_rect(pixel)?;
+        self.canvas.painter.canvas.fill_rect(pixel)?;
 
         if self.debug_lines {
-            self.canvas.set_draw_color(Color::GRAY);
-            self.canvas.draw_rect(pixel)?;
+            self.canvas.painter.canvas.set_draw_color(Color::GRAY);
+            self.canvas.painter.canvas.draw_rect(pixel)?;
         }
 
         Ok(())

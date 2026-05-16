@@ -1,9 +1,11 @@
+use egui_sdl2::egui::{self, Align2};
 use sdl2::Sdl;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::video::Window;
 
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
@@ -44,6 +46,9 @@ pub struct Chip8 {
     keypad: [bool; 16],
     instructions_per_second: u32,
     debug: bool,
+    paused: bool,
+    breakpoints: HashSet<u16>,
+    reset: bool,
 }
 impl Chip8 {
     pub fn new(
@@ -51,6 +56,7 @@ impl Chip8 {
         on_color: Color,
         off_color: Color,
         instructions_per_second: u32,
+        breakpoints: HashSet<u16>,
         debug: bool,
     ) -> Result<Self, String> {
         let display = C8Display::new(window, on_color, off_color, debug)?;
@@ -67,6 +73,9 @@ impl Chip8 {
             keypad: [false; 16],
             instructions_per_second,
             debug,
+            paused: false,
+            breakpoints,
+            reset: false,
         };
 
         state.memory[0x50..=0x09F].copy_from_slice(&FONT_DATA);
@@ -74,12 +83,13 @@ impl Chip8 {
         Ok(state)
     }
 
-    pub fn from_config(window: Window, cfg: &C8Config) -> Result<Self, String> {
+    pub fn from_config(window: Window, cfg: C8Config) -> Result<Self, String> {
         Chip8::new(
             window,
             cfg.on_color,
             cfg.off_color,
             cfg.instructions_per_second,
+            cfg.breakpoints,
             cfg.debug,
         )
     }
@@ -88,6 +98,20 @@ impl Chip8 {
         let mut file = File::open(path)?;
         file.read(&mut self.memory[0x200..])?; // TODO: read_exact doesn't work on all systems
         Ok(())
+    }
+
+    fn reset_state(&mut self) {
+        // TODO: rewrite and implement with new()
+        self.memory = [0; 4096];
+        self.memory[0x50..=0x09F].copy_from_slice(&FONT_DATA);
+        self.var_regs = [0; 16];
+        self.idx_reg = 0;
+        self.stack = Vec::new();
+        self.pc = 0x200;
+        self.delay_timer = 0;
+        self.sound_timer = 0;
+        self.keypad = [false; 16];
+        self.display.buff.fill(false);
     }
 
     pub fn run(&mut self, rom_path: PathBuf, sdl_context: Sdl) -> Result<(), String> {
@@ -104,7 +128,14 @@ impl Chip8 {
         'running: loop {
             let start_time = Instant::now();
 
+            if self.breakpoints.contains(&self.pc) {
+                self.paused = true;
+                self.breakpoints.remove(&self.pc);
+            }
+
             for event in event_pump.poll_iter() {
+                let _ = self.display.canvas.on_event(&event);
+
                 match event {
                     Event::Quit { .. }
                     | Event::KeyDown {
@@ -115,15 +146,43 @@ impl Chip8 {
                         keycode: Some(keycode),
                         ..
                     } => {
+                        // keypad
                         if let Some(key) = get_input(keycode) {
                             self.keypad[key as usize] = true;
                             eprintln!("Keys pressed: {:?}", self.keypad);
+                        }
+
+                        // pause toggle
+                        if keycode == Keycode::Space {
+                            self.paused ^= true;
+                        }
+
+                        // manual advance
+                        if self.paused && keycode == Keycode::N {
+                            if let Err(e) = self.run_next_instruction() {
+                                eprint!("{}", e);
+                                break 'running;
+                            }
+                        }
+
+                        // debug toggle
+                        if keycode == Keycode::Tab {
+                            self.debug ^= true;
+                            self.display.debug_lines ^= true;
+                            self.display.canvas.clear([0, 0, 0, 255]);
+                            self.display.draw_screen_buffer()?;
+                        }
+
+                        // reset
+                        if keycode == Keycode::Backspace {
+                            self.reset = true;
                         }
                     }
                     Event::KeyUp {
                         keycode: Some(keycode),
                         ..
                     } => {
+                        // keypad release
                         if let Some(key) = get_input(keycode) {
                             self.keypad[key as usize] = false;
                             eprintln!("Keys pressed: {:?}", self.keypad);
@@ -133,41 +192,64 @@ impl Chip8 {
                 }
             }
 
-            let op_code = self.fetch_opcode();
-
-            if self.debug
-                && let Some(oc) = op_code
-            {
-                eprintln!("Opcode: {:#x}", oc);
+            if self.debug {
+                self.show_debug_ui();
             }
 
-            match op_code {
-                None => {
-                    eprintln!("Reached end of file; Terminating");
+            if !self.paused {
+                if let Err(e) = self.run_next_instruction() {
+                    eprint!("{}", e);
                     break 'running;
                 }
-                Some(op) => {
-                    self.execute_opcode(op)?;
 
-                    if self.delay_timer > 0 {
-                        self.delay_timer -= 1;
-                    }
-                    if self.sound_timer > 0 {
-                        self.sound_timer -= 1;
-                    }
+                let elapsed = start_time.elapsed();
 
-                    let elapsed = start_time.elapsed();
-
-                    let instruction_delay_msec: Duration =
-                        Duration::from_millis(1000 / self.instructions_per_second as u64);
-                    if elapsed < instruction_delay_msec {
-                        std::thread::sleep(instruction_delay_msec - elapsed);
-                    }
+                let instruction_delay_msec: Duration =
+                    Duration::from_millis(1000 / self.instructions_per_second as u64);
+                if elapsed < instruction_delay_msec {
+                    std::thread::sleep(instruction_delay_msec - elapsed);
                 }
+            }
+
+            if self.reset {
+                self.reset_state();
+                self.load_rom(&rom_path).map_err(|e| e.to_string())?;
+
+                self.display.canvas.clear([0, 0, 0, 255]);
+                self.display.draw_screen_buffer()?;
+
+                self.paused = true;
+                self.reset = false;
             }
         }
 
         Ok(())
+    }
+
+    fn run_next_instruction(&mut self) -> Result<(), String> {
+        let op_code = self.fetch_opcode();
+
+        if self.debug
+            && let Some(oc) = op_code
+        {
+            eprintln!("Opcode: {:#x}", oc);
+        }
+
+        match op_code {
+            None => Err("Reached end of file; Terminating".to_string()),
+            Some(op) => {
+                self.execute_opcode(op)?;
+
+                if self.delay_timer > 0 {
+                    self.delay_timer -= 1;
+                }
+                if self.sound_timer > 0 {
+                    self.sound_timer -= 1;
+                }
+
+                Ok(())
+            }
+        }
     }
 
     fn fetch_opcode(&mut self) -> Option<u16> {
@@ -241,5 +323,50 @@ impl Chip8 {
             _ => todo!("Remaining instructions"),
         }
         Ok(())
+    }
+
+    // TODO: move into display.rs
+    fn show_debug_ui(&mut self) {
+        self.display.canvas.run(|ctx| {
+            egui::Window::new("Program State").show(ctx, |ui| {
+                if ui.add(egui::Button::new("Reset ROM")).clicked() {
+                    self.reset = true;
+                }
+                ui.separator();
+                ui.label("Variable Registers:");
+                for (reg, val) in self.var_regs.iter().enumerate() {
+                    ui.label(format!("\t{:x}: {:#x}", reg, val));
+                }
+                ui.separator();
+                ui.label(format!("I: {:#x}", self.idx_reg));
+                ui.label(format!("PC: {:#x}", self.pc));
+                ui.label(format!("Delay Timer: {:#x}", self.delay_timer));
+                ui.label(format!("Sound Timer: {:#x}", self.sound_timer));
+                ui.separator();
+                ui.label(format!("Stack: {:#x?}", self.stack));
+            });
+
+            egui::Window::new("Debug Information").show(ctx, |ui| {
+                ui.add(
+                    egui::Slider::new(&mut self.instructions_per_second, 1..=1000)
+                        .text("Instructions_per_second"),
+                );
+                ui.label(format!("Paused: {}", self.paused));
+                ui.label("Breakpoints:");
+                for breakpoint in self.breakpoints.iter() {
+                    ui.label(format!("\t{breakpoint}"));
+                }
+            });
+
+            egui::Window::new("Memory")
+                .vscroll(true)
+                .anchor(Align2::RIGHT_TOP, [-15.0, 15.0])
+                .show(ctx, |ui| {
+                    // TODO: alignment
+                    ui.label(format!("{:x?}", self.memory));
+                });
+        });
+        self.display.canvas.paint();
+        self.display.canvas.present();
     }
 }
