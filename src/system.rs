@@ -5,6 +5,8 @@ use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::video::Window;
 
+use rand::{Rng, RngExt};
+
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::Read;
@@ -273,21 +275,106 @@ impl Chip8 {
                 self.display.buff.fill(false);
                 self.display.draw_screen_buffer()?;
             }
+            (0x0, 0x0, 0xE, 0xE) => {
+                // 00EE - Return from subroutine
+                // TODO
+            }
             (0x1, _, _, _) => {
                 // 1NNN - Jump
                 self.pc = op_code & 0x0FFF;
             }
+            (0x2, _, _, _) => {
+                // 2NNN - Call subroutine
+                // TODO
+            }
+            (0x3, x, _, _) => {
+                // 3XNN - Skip if Vx == NN
+                let val = (op_code & 0x00FF) as u8;
+                let vx = self.var_regs[x as usize];
+                if vx == val {
+                    self.pc += 2;
+                }
+            }
+            (0x4, x, _, _) => {
+                // 4XNN - Skip if Vx != NN
+                let val = (op_code & 0x00FF) as u8;
+                let vx = self.var_regs[x as usize];
+                if vx != val {
+                    self.pc += 2;
+                }
+            }
+            (0x5, x, y, 0x0) => {
+                // 5XY0 - Skip if Vx == Vy
+                let vx = self.var_regs[x as usize];
+                let vy = self.var_regs[y as usize];
+                if vx == vy {
+                    self.pc += 2;
+                }
+            }
             (0x6, x, _, _) => {
                 // 6XNN - Set Register
-                self.var_regs[x as usize] = (op_code & 0x0FF) as u8;
+                self.var_regs[x as usize] = (op_code & 0x00FF) as u8;
             }
             (0x7, x, _, _) => {
                 // 7XNN - Add to Register
-                self.var_regs[x as usize] += (op_code & 0x0FF) as u8;
+                self.var_regs[x as usize] += (op_code & 0x00FF) as u8;
+            }
+            (0x8, x, y, op) => {
+                // 8XY0-E - Math / Bitwise / Assignment Operations
+                let mut flag = self.var_regs[0xF];
+                let vy = self.var_regs[y as usize];
+                let vx = &mut self.var_regs[x as usize];
+
+                match op {
+                    0x0 => *vx = vy,
+                    0x1 => *vx |= vy,
+                    0x2 => *vx &= vy,
+                    0x3 => *vx ^= vy,
+                    0x4 => {
+                        flag = if *vx > u8::MAX - vy { 1 } else { 0 };
+                        *vx += vy;
+                    }
+                    0x5 => {
+                        flag = if *vx >= vy { 1 } else { 0 };
+                        *vx -= vy;
+                    }
+                    0x6 => {
+                        flag = *vx & 0x0001;
+                        *vx >>= 1;
+                    }
+                    0x7 => {
+                        flag = if vy >= *vx { 1 } else { 0 };
+                        *vx = vy - *vx;
+                    }
+                    0xE => {
+                        flag = *vx & 0x80;
+                        *vx <<= 1;
+                    }
+                    _ => (),
+                };
+
+                self.var_regs[0xF] = flag;
+            }
+            (0x9, x, y, 0x0) => {
+                // 9XY0 - Skip if Vx != Vy
+                let vx = self.var_regs[x as usize];
+                let vy = self.var_regs[y as usize];
+                if vx != vy {
+                    self.pc += 2;
+                }
             }
             (0xA, _, _, _) => {
                 // ANNN - Set Index Register
                 self.idx_reg = op_code & 0x0FFF;
+            }
+            (0xB, _, _, _) => {
+                // BNNN - Jump to NNN + V0
+                self.pc = self.var_regs[0x0] as u16 + (op_code & 0x0FFF);
+            }
+            (0xC, x, _, _) => {
+                // CXNN - Random Number
+                let r = rand::rng().random::<u8>();
+                self.var_regs[x as usize] = r & ((op_code & 0x00FF) as u8);
             }
             (0xD, x, y, height) => {
                 // DXYN - Draw to Screen
@@ -320,7 +407,51 @@ impl Chip8 {
 
                 self.display.draw_screen_buffer()?;
             }
-            _ => todo!("Remaining instructions"),
+            (0xE, x, 0x9, 0xE) => {
+                // EX9E - Skip if key pressed
+                // TODO
+            }
+            (0xE, x, 0xA, 0x1) => {
+                // EXA1 - Skip if key not pressed
+                // TODO
+            }
+            (0xF, x, 0x0, 0x7) => {
+                // FX07 - Get delay timer
+                // TODO
+            }
+            (0xF, x, 0x0, 0xA) => {
+                // FX0A - Await key press
+                // TODO
+            }
+            (0xF, x, 0x1, 0x5) => {
+                // FX15 - Set delay timer
+                // TODO
+            }
+            (0xF, x, 0x1, 0x8) => {
+                // FX18 - Set sound timer
+                // TODO
+            }
+            (0xF, x, 0x1, 0xE) => {
+                // FX1E - Add to I
+                // TODO
+            }
+            (0xF, x, 0x2, 0x9) => {
+                // FX29 - Set I to sprite address
+                // TODO
+            }
+            (0xF, x, 0x3, 0x3) => {
+                // FX33 - Binary-coded decimal
+                // TODO
+            }
+            (0xF, x, 0x5, 0x5) => {
+                // FX55 - Dump registers to memory
+                // TODO
+            }
+            (0xF, x, 0x6, 0x5) => {
+                // FX55 - Load registers from memory
+                // TODO
+            }
+            _ => eprintln!("Unknown Instruction: {:#x}", op_code),
         }
         Ok(())
     }

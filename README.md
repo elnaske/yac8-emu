@@ -11,7 +11,7 @@ A CHIP-8 emulator/interpreter and debugger written in Rust + SDL2.
 | Timers       | Done*       |
 | Interpreter  | In progress |
 | Debugger     | In progress |
-| OpCodes      | 6/35        |
+| OpCodes      | 21/34        |
 
 ## Installation
 
