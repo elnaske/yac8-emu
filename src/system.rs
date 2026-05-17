@@ -277,7 +277,7 @@ impl Chip8 {
             }
             (0x0, 0x0, 0xE, 0xE) => {
                 // 00EE - Return from subroutine
-                // TODO
+                self.pc = self.stack.pop().expect("No subroutine to return from");
             }
             (0x1, _, _, _) => {
                 // 1NNN - Jump
@@ -285,7 +285,8 @@ impl Chip8 {
             }
             (0x2, _, _, _) => {
                 // 2NNN - Call subroutine
-                // TODO
+                self.stack.push(self.pc);
+                self.pc = op_code & 0x0FFF;
             }
             (0x3, x, _, _) => {
                 // 3XNN - Skip if Vx == NN
@@ -433,7 +434,7 @@ impl Chip8 {
             }
             (0xF, x, 0x1, 0xE) => {
                 // FX1E - Add to I
-                // TODO
+                self.idx_reg += self.var_regs[x as usize] as u16;
             }
             (0xF, x, 0x2, 0x9) => {
                 // FX29 - Set I to sprite address
@@ -441,15 +442,24 @@ impl Chip8 {
             }
             (0xF, x, 0x3, 0x3) => {
                 // FX33 - Binary-coded decimal
-                // TODO
+                let vx = self.var_regs[x as usize];
+                let idx = self.idx_reg as usize;
+
+                self.memory[idx] = vx / 100;
+                self.memory[idx + 1] = (vx / 10) % 10;
+                self.memory[idx + 2] = vx % 10;
             }
             (0xF, x, 0x5, 0x5) => {
-                // FX55 - Dump registers to memory
-                // TODO
+                // FX55 - Dump registers V0 - Vx to memory
+                let start = self.idx_reg as usize;
+                let end = start + x as usize;
+                self.memory[start..=end].copy_from_slice(&self.var_regs[0..=x as usize]);
             }
             (0xF, x, 0x6, 0x5) => {
-                // FX55 - Load registers from memory
-                // TODO
+                // FX65 - Load registers V0 - Vx from memory
+                let start = self.idx_reg as usize;
+                let end = start + x as usize;
+                self.var_regs[0..=x as usize].copy_from_slice(&self.memory[start..=end]);
             }
             _ => eprintln!("Unknown Instruction: {:#x}", op_code),
         }
