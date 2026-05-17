@@ -5,6 +5,8 @@ use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::video::Window;
 
+use rand::{Rng, RngExt};
+
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::Read;
@@ -149,7 +151,6 @@ impl Chip8 {
                         // keypad
                         if let Some(key) = get_input(keycode) {
                             self.keypad[key as usize] = true;
-                            eprintln!("Keys pressed: {:?}", self.keypad);
                         }
 
                         // pause toggle
@@ -185,7 +186,6 @@ impl Chip8 {
                         // keypad release
                         if let Some(key) = get_input(keycode) {
                             self.keypad[key as usize] = false;
-                            eprintln!("Keys pressed: {:?}", self.keypad);
                         }
                     }
                     _ => {}
@@ -273,21 +273,107 @@ impl Chip8 {
                 self.display.buff.fill(false);
                 self.display.draw_screen_buffer()?;
             }
+            (0x0, 0x0, 0xE, 0xE) => {
+                // 00EE - Return from subroutine
+                self.pc = self.stack.pop().expect("No subroutine to return from");
+            }
             (0x1, _, _, _) => {
                 // 1NNN - Jump
                 self.pc = op_code & 0x0FFF;
             }
+            (0x2, _, _, _) => {
+                // 2NNN - Call subroutine
+                self.stack.push(self.pc);
+                self.pc = op_code & 0x0FFF;
+            }
+            (0x3, x, _, _) => {
+                // 3XNN - Skip if Vx == NN
+                let val = (op_code & 0x00FF) as u8;
+                let vx = self.var_regs[x as usize];
+                if vx == val {
+                    self.pc += 2;
+                }
+            }
+            (0x4, x, _, _) => {
+                // 4XNN - Skip if Vx != NN
+                let val = (op_code & 0x00FF) as u8;
+                let vx = self.var_regs[x as usize];
+                if vx != val {
+                    self.pc += 2;
+                }
+            }
+            (0x5, x, y, 0x0) => {
+                // 5XY0 - Skip if Vx == Vy
+                let vx = self.var_regs[x as usize];
+                let vy = self.var_regs[y as usize];
+                if vx == vy {
+                    self.pc += 2;
+                }
+            }
             (0x6, x, _, _) => {
                 // 6XNN - Set Register
-                self.var_regs[x as usize] = (op_code & 0x0FF) as u8;
+                self.var_regs[x as usize] = (op_code & 0x00FF) as u8;
             }
             (0x7, x, _, _) => {
                 // 7XNN - Add to Register
-                self.var_regs[x as usize] += (op_code & 0x0FF) as u8;
+                self.var_regs[x as usize] += (op_code & 0x00FF) as u8;
+            }
+            (0x8, x, y, op) => {
+                // 8XY0-E - Math / Bitwise / Assignment Operations
+                let mut flag = self.var_regs[0xF];
+                let vy = self.var_regs[y as usize];
+                let vx = &mut self.var_regs[x as usize];
+
+                match op {
+                    0x0 => *vx = vy,
+                    0x1 => *vx |= vy,
+                    0x2 => *vx &= vy,
+                    0x3 => *vx ^= vy,
+                    0x4 => {
+                        flag = if *vx > u8::MAX - vy { 1 } else { 0 };
+                        *vx += vy;
+                    }
+                    0x5 => {
+                        flag = if *vx >= vy { 1 } else { 0 };
+                        *vx -= vy;
+                    }
+                    0x6 => {
+                        flag = *vx & 0x0001;
+                        *vx >>= 1;
+                    }
+                    0x7 => {
+                        flag = if vy >= *vx { 1 } else { 0 };
+                        *vx = vy - *vx;
+                    }
+                    0xE => {
+                        flag = (*vx & 0x80) >> 7;
+                        *vx <<= 1;
+                    }
+                    _ => (),
+                };
+
+                self.var_regs[0xF] = flag;
+            }
+            (0x9, x, y, 0x0) => {
+                // 9XY0 - Skip if Vx != Vy
+                let vx = self.var_regs[x as usize];
+                let vy = self.var_regs[y as usize];
+                if vx != vy {
+                    self.pc += 2;
+                }
             }
             (0xA, _, _, _) => {
                 // ANNN - Set Index Register
                 self.idx_reg = op_code & 0x0FFF;
+            }
+            (0xB, _, _, _) => {
+                // BNNN - Jump to NNN + V0
+                self.pc = self.var_regs[0x0] as u16 + (op_code & 0x0FFF);
+            }
+            (0xC, x, _, _) => {
+                // CXNN - Random Number
+                let r = rand::rng().random::<u8>();
+                self.var_regs[x as usize] = r & ((op_code & 0x00FF) as u8);
             }
             (0xD, x, y, height) => {
                 // DXYN - Draw to Screen
@@ -320,7 +406,77 @@ impl Chip8 {
 
                 self.display.draw_screen_buffer()?;
             }
-            _ => todo!("Remaining instructions"),
+            (0xE, x, 0x9, 0xE) => {
+                // EX9E - Skip if key pressed
+                let vx = self.var_regs[x as usize];
+                if self.keypad[(vx & 0x00FF) as usize] {
+                    self.pc += 2;
+                }
+            }
+            (0xE, x, 0xA, 0x1) => {
+                // EXA1 - Skip if key not pressed
+                let vx = self.var_regs[x as usize];
+                if !self.keypad[(vx & 0x00FF) as usize] {
+                    self.pc += 2;
+                }
+            }
+            (0xF, x, 0x0, 0x7) => {
+                // FX07 - Get delay timer
+                self.var_regs[x as usize] = self.delay_timer;
+            }
+            (0xF, x, 0x0, 0xA) => {
+                // FX0A - Await key press
+                let mut pressed = false;
+                for i in 0..self.keypad.len() {
+                    if self.keypad[i] {
+                        self.var_regs[x as usize] = i as u8;
+                        pressed = true;
+                        break;
+                    }
+                }
+
+                if !pressed {
+                    self.pc -= 2;
+                }
+            }
+            (0xF, x, 0x1, 0x5) => {
+                // FX15 - Set delay timer
+                self.delay_timer = self.var_regs[x as usize];
+            }
+            (0xF, x, 0x1, 0x8) => {
+                // FX18 - Set sound timer
+                self.sound_timer = self.var_regs[x as usize];
+            }
+            (0xF, x, 0x1, 0xE) => {
+                // FX1E - Add to I
+                self.idx_reg += self.var_regs[x as usize] as u16;
+            }
+            (0xF, x, 0x2, 0x9) => {
+                // FX29 - Set I to font address
+                self.idx_reg = 0x50 + (x & 0xF);
+            }
+            (0xF, x, 0x3, 0x3) => {
+                // FX33 - Binary-coded decimal
+                let vx = self.var_regs[x as usize];
+                let idx = self.idx_reg as usize;
+
+                self.memory[idx] = vx / 100;
+                self.memory[idx + 1] = (vx / 10) % 10;
+                self.memory[idx + 2] = vx % 10;
+            }
+            (0xF, x, 0x5, 0x5) => {
+                // FX55 - Dump registers V0 - Vx to memory
+                let start = self.idx_reg as usize;
+                let end = start + x as usize;
+                self.memory[start..=end].copy_from_slice(&self.var_regs[0..=x as usize]);
+            }
+            (0xF, x, 0x6, 0x5) => {
+                // FX65 - Load registers V0 - Vx from memory
+                let start = self.idx_reg as usize;
+                let end = start + x as usize;
+                self.var_regs[0..=x as usize].copy_from_slice(&self.memory[start..=end]);
+            }
+            _ => eprintln!("Unknown Instruction: {:#x}", op_code),
         }
         Ok(())
     }
@@ -343,7 +499,7 @@ impl Chip8 {
                 ui.label(format!("Delay Timer: {:#x}", self.delay_timer));
                 ui.label(format!("Sound Timer: {:#x}", self.sound_timer));
                 ui.separator();
-                ui.label(format!("Stack: {:#x?}", self.stack));
+                ui.label(format!("Stack: {:x?}", self.stack));
             });
 
             egui::Window::new("Debug Information").show(ctx, |ui| {
