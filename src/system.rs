@@ -151,7 +151,6 @@ impl Chip8 {
                         // keypad
                         if let Some(key) = get_input(keycode) {
                             self.keypad[key as usize] = true;
-                            eprintln!("Keys pressed: {:?}", self.keypad);
                         }
 
                         // pause toggle
@@ -187,7 +186,6 @@ impl Chip8 {
                         // keypad release
                         if let Some(key) = get_input(keycode) {
                             self.keypad[key as usize] = false;
-                            eprintln!("Keys pressed: {:?}", self.keypad);
                         }
                     }
                     _ => {}
@@ -410,35 +408,52 @@ impl Chip8 {
             }
             (0xE, x, 0x9, 0xE) => {
                 // EX9E - Skip if key pressed
-                // TODO
+                let vx = self.var_regs[x as usize];
+                if self.keypad[(vx & 0x00FF) as usize] {
+                    self.pc += 2;
+                }
             }
             (0xE, x, 0xA, 0x1) => {
                 // EXA1 - Skip if key not pressed
-                // TODO
+                let vx = self.var_regs[x as usize];
+                if !self.keypad[(vx & 0x00FF) as usize] {
+                    self.pc += 2;
+                }
             }
             (0xF, x, 0x0, 0x7) => {
                 // FX07 - Get delay timer
-                // TODO
+                self.var_regs[x as usize] = self.delay_timer;
             }
             (0xF, x, 0x0, 0xA) => {
                 // FX0A - Await key press
-                // TODO
+                let mut pressed = false;
+                for i in 0..self.keypad.len() {
+                    if self.keypad[i] {
+                        self.var_regs[x as usize] = i as u8;
+                        pressed = true;
+                        break;
+                    }
+                }
+
+                if !pressed {
+                    self.pc -= 2;
+                }
             }
             (0xF, x, 0x1, 0x5) => {
                 // FX15 - Set delay timer
-                // TODO
+                self.delay_timer = self.var_regs[x as usize];
             }
             (0xF, x, 0x1, 0x8) => {
                 // FX18 - Set sound timer
-                // TODO
+                self.sound_timer = self.var_regs[x as usize];
             }
             (0xF, x, 0x1, 0xE) => {
                 // FX1E - Add to I
                 self.idx_reg += self.var_regs[x as usize] as u16;
             }
             (0xF, x, 0x2, 0x9) => {
-                // FX29 - Set I to sprite address
-                // TODO
+                // FX29 - Set I to font address
+                self.idx_reg = 0x50 + (x & 0xF);
             }
             (0xF, x, 0x3, 0x3) => {
                 // FX33 - Binary-coded decimal
@@ -484,7 +499,7 @@ impl Chip8 {
                 ui.label(format!("Delay Timer: {:#x}", self.delay_timer));
                 ui.label(format!("Sound Timer: {:#x}", self.sound_timer));
                 ui.separator();
-                ui.label(format!("Stack: {:#x?}", self.stack));
+                ui.label(format!("Stack: {:x?}", self.stack));
             });
 
             egui::Window::new("Debug Information").show(ctx, |ui| {
