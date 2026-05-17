@@ -348,7 +348,7 @@ impl Chip8 {
                         *vx = vy - *vx;
                     }
                     0xE => {
-                        flag = *vx & 0x80;
+                        flag = (*vx & 0x80) >> 7;
                         *vx <<= 1;
                     }
                     _ => (),
