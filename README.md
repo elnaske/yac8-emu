@@ -6,11 +6,11 @@ A CHIP-8 emulator/interpreter and debugger written in Rust + SDL2.
 | Feature      | Status      |
 | ------------ | ----------- |
 | Display      | Done*       |
-| Input        | In progress |
-| System Specs | Done*       |
-| Timers       | Done*       |
-| Sound        |             |
-| Interpreter  | Done*       |
+| Input        | Done        |
+| System Specs | Done        |
+| Timers       | Done        |
+| Sound        | Done        |
+| Interpreter  | Done        |
 | Debugger     | In progress |
 | OpCodes      | 34/34       |
 

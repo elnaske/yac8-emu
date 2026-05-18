@@ -1,11 +1,12 @@
 use egui_sdl2::egui::{self, Align2};
 use sdl2::Sdl;
+use sdl2::audio::AudioDevice;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::video::Window;
 
-use rand::{Rng, RngExt};
+use rand::RngExt;
 
 use std::collections::HashSet;
 use std::fs::File;
@@ -13,6 +14,7 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use crate::audio::SquareWave;
 use crate::config::C8Config;
 use crate::display::C8Display;
 use crate::input::get_input;
@@ -39,22 +41,25 @@ const FONT_DATA: [u8; 80] = [
 pub struct Chip8 {
     memory: [u8; 4096],
     display: C8Display,
+    keypad: [bool; 16],
     var_regs: [u8; 16],
     stack: Vec<u16>,
     pc: u16,
     idx_reg: u16,
     delay_timer: u8,
     sound_timer: u8,
-    keypad: [bool; 16],
     instructions_per_second: u32,
+    breakpoints: HashSet<u16>,
     debug: bool,
     paused: bool,
-    breakpoints: HashSet<u16>,
     reset: bool,
+    quit: bool,
+    audio_device: AudioDevice<SquareWave>,
 }
 impl Chip8 {
     pub fn new(
         window: Window,
+        audio_device: AudioDevice<SquareWave>,
         on_color: Color,
         off_color: Color,
         instructions_per_second: u32,
@@ -66,18 +71,20 @@ impl Chip8 {
         let mut state = Chip8 {
             memory: [0; 4096],
             display,
+            keypad: [false; 16],
             var_regs: [0; 16],
             stack: Vec::new(),
             pc: 0x200,
             idx_reg: 0,
             delay_timer: 0,
             sound_timer: 0,
-            keypad: [false; 16],
             instructions_per_second,
+            breakpoints,
             debug,
             paused: false,
-            breakpoints,
             reset: false,
+            quit: false,
+            audio_device,
         };
 
         state.memory[0x50..=0x09F].copy_from_slice(&FONT_DATA);
@@ -85,9 +92,14 @@ impl Chip8 {
         Ok(state)
     }
 
-    pub fn from_config(window: Window, cfg: C8Config) -> Result<Self, String> {
+    pub fn from_config(
+        window: Window,
+        cfg: C8Config,
+        audio_device: AudioDevice<SquareWave>,
+    ) -> Result<Self, String> {
         Chip8::new(
             window,
+            audio_device,
             cfg.on_color,
             cfg.off_color,
             cfg.instructions_per_second,
@@ -119,7 +131,7 @@ impl Chip8 {
     pub fn run(&mut self, rom_path: PathBuf, sdl_context: Sdl) -> Result<(), String> {
         self.load_rom(&rom_path).map_err(|e| e.to_string())?;
         if self.debug {
-            eprintln!("Loaded ROM: `{:?}`", rom_path); // TODO: absolute path
+            eprintln!("Loaded ROM: `{:?}`", rom_path);
         }
 
         self.display.draw_screen_buffer()?;
@@ -137,59 +149,11 @@ impl Chip8 {
 
             for event in event_pump.poll_iter() {
                 let _ = self.display.canvas.on_event(&event);
+                self.handle_input(&event)?;
+            }
 
-                match event {
-                    Event::Quit { .. }
-                    | Event::KeyDown {
-                        keycode: Some(Keycode::Escape),
-                        ..
-                    } => break 'running,
-                    Event::KeyDown {
-                        keycode: Some(keycode),
-                        ..
-                    } => {
-                        // keypad
-                        if let Some(key) = get_input(keycode) {
-                            self.keypad[key as usize] = true;
-                        }
-
-                        // pause toggle
-                        if keycode == Keycode::Space {
-                            self.paused ^= true;
-                        }
-
-                        // manual advance
-                        if self.paused && keycode == Keycode::N {
-                            if let Err(e) = self.run_next_instruction() {
-                                eprint!("{}", e);
-                                break 'running;
-                            }
-                        }
-
-                        // debug toggle
-                        if keycode == Keycode::Tab {
-                            self.debug ^= true;
-                            self.display.debug_lines ^= true;
-                            self.display.canvas.clear([0, 0, 0, 255]);
-                            self.display.draw_screen_buffer()?;
-                        }
-
-                        // reset
-                        if keycode == Keycode::Backspace {
-                            self.reset = true;
-                        }
-                    }
-                    Event::KeyUp {
-                        keycode: Some(keycode),
-                        ..
-                    } => {
-                        // keypad release
-                        if let Some(key) = get_input(keycode) {
-                            self.keypad[key as usize] = false;
-                        }
-                    }
-                    _ => {}
-                }
+            if self.quit {
+                break 'running;
             }
 
             if self.debug {
@@ -226,6 +190,63 @@ impl Chip8 {
         Ok(())
     }
 
+    fn handle_input(&mut self, event: &Event) -> Result<(), String> {
+        match event {
+            Event::Quit { .. }
+            | Event::KeyDown {
+                keycode: Some(Keycode::Escape),
+                ..
+            } => self.quit = true,
+            Event::KeyDown {
+                keycode: Some(keycode),
+                ..
+            } => {
+                // keypad
+                if let Some(key) = get_input(*keycode) {
+                    self.keypad[key as usize] = true;
+                }
+
+                // pause toggle
+                if *keycode == Keycode::Space {
+                    self.audio_device.pause();
+                    self.paused ^= true;
+                }
+
+                // manual advance
+                if self.paused && *keycode == Keycode::N {
+                    if let Err(e) = self.run_next_instruction() {
+                        eprint!("{}", e);
+                        self.quit = true;
+                    }
+                }
+
+                // debug toggle
+                if *keycode == Keycode::Tab {
+                    self.debug ^= true;
+                    self.display.debug_lines ^= true;
+                    self.display.canvas.clear([0, 0, 0, 255]);
+                    self.display.draw_screen_buffer()?;
+                }
+
+                // reset
+                if *keycode == Keycode::Backspace {
+                    self.reset = true;
+                }
+            }
+            Event::KeyUp {
+                keycode: Some(keycode),
+                ..
+            } => {
+                // keypad release
+                if let Some(key) = get_input(*keycode) {
+                    self.keypad[key as usize] = false;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
     fn run_next_instruction(&mut self) -> Result<(), String> {
         let op_code = self.fetch_opcode();
 
@@ -240,12 +261,7 @@ impl Chip8 {
             Some(op) => {
                 self.execute_opcode(op)?;
 
-                if self.delay_timer > 0 {
-                    self.delay_timer -= 1;
-                }
-                if self.sound_timer > 0 {
-                    self.sound_timer -= 1;
-                }
+                self.update_timers();
 
                 Ok(())
             }
@@ -479,6 +495,20 @@ impl Chip8 {
             _ => eprintln!("Unknown Instruction: {:#x}", op_code),
         }
         Ok(())
+    }
+
+    fn update_timers(&mut self) {
+        if self.delay_timer > 0 {
+            self.delay_timer -= 1;
+        }
+        if self.sound_timer > 0 {
+            if !self.paused {
+                self.audio_device.resume();
+            }
+            self.sound_timer -= 1;
+        } else {
+            self.audio_device.pause();
+        }
     }
 
     // TODO: move into display.rs

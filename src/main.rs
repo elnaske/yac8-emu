@@ -9,7 +9,9 @@ use display::{SCREEN_HEIGHT, SCREEN_WIDTH};
 pub mod system;
 use system::Chip8;
 
+pub mod audio;
 pub mod input;
+use audio::get_audio_device;
 
 fn main() {
     let cfg = C8Config::parse_args().expect("Error parsing arguments");
@@ -29,6 +31,9 @@ fn main() {
         .build()
         .expect("Failed to create window");
 
-    let mut chip8 = Chip8::from_config(window, cfg).expect("Failed to initialize state");
+    let audio_device = get_audio_device(&sdl_context, Some(44100), Some(1), Some(500)).unwrap();
+
+    let mut chip8 =
+        Chip8::from_config(window, cfg, audio_device).expect("Failed to initialize state");
     chip8.run(rom_path, sdl_context).expect("Runtime error");
 }
